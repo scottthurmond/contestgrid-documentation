@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid Billing Processor API
+  description: |
+    Billing workflow orchestrator for ContestGrid multi-tenant SaaS platform.
+    Coordinates payment processing, payroll calculation, and payroll disbursement
+    across billing-sys, core-sys, and officials-sys. This is a process API —
+    it owns no data tables but orchestrates calls across system APIs.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: http://contestgrid-billing-proc.contestgrid.svc.cluster.local:3005
+    description: Kubernetes cluster (internal)
+  - url: http://localhost:3005
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health checks (no auth required)
+  - name: Workflows
+    description: Billing orchestration workflows
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: contestgrid-proc-billing
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+
+    ProcessPaymentRequest:
+      type: object
+      required: [contestScheduleId]
+      properties:
+        contestScheduleId:
+          type: integer
+        processor:
+          type: string
+          maxLength: 50
+          description: Payment processor name (e.g., "stripe", "manual")
+
+    ProcessPaymentResponse:
+      type: object
+      properties:
+        contestScheduleId:
+          type: integer
+        contestBillPayment:
+          type: object
+          description: The contest-level bill payment record created
+        officialPayouts:
+          type: array
+          items:
+            type: object
+          description: Individual official payout records created
+        totalBilled:
+          type: number
+          format: double
+        totalPaidOut:
+          type: number
+          format: double
+        message:
+          type: string
+
+    CalculatePayrollRequest:
+      type: object
+      required: [periodStart, periodEnd]
+      properties:
+        periodStart:
+          type: string
+          format: date
+          example: "2026-03-01"
+        periodEnd:
+          type: string
+          format: date
+          example: "2026-03-31"
+        associationTenantId:
+          type: integer
+          description: Filter by officials association tenant
+
+    OfficialAssignmentDetail:
+      type: object
+      properties:
+        assignmentId:
+          type: integer
+        contestScheduleId:
+          type: integer
+        contestDate:
+          type: string
+          format: date
+        rate:
+          type: number
+          format: double
+
+    OfficialPayrollSummary:
+      type: object
+      properties:
+        officialId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        contestsWorked:
+          type: integer
+        totalEarnings:
+          type: number
+          format: double
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfficialAssignmentDetail'
+
+    CalculatePayrollResponse:
+      type: object
+      properties:
+        periodStart:
+          type: string
+          format: date
+        periodEnd:
+          type: string
+          format: date
+        totalOfficials:
+          type: integer
+        totalContests:
+          type: integer
+        totalPayroll:
+          type: number
+          format: double
+        officials:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfficialPayrollSummary'
+        message:
+          type: string
+
+    DisbursePayrollRequest:
+      type: object
+      required: [periodStart, periodEnd]
+      properties:
+        periodStart:
+          type: string
+          format: date
+          example: "2026-03-01"
+        periodEnd:
+          type: string
+          format: date
+          example: "2026-03-31"
+        associationTenantId:
+          type: integer
+          description: Filter by officials association tenant
+        processor:
+          type: string
+          maxLength: 50
+          description: Payment processor name
+
+    OfficialDisbursement:
+      type: object
+      properties:
+        officialId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        amount:
+          type: number
+          format: double
+        paymentId:
+          type: integer
+
+    DisbursePayrollResponse:
+      type: object
+      properties:
+        paymentsCreated:
+          type: integer
+        totalDisbursed:
+          type: number
+          format: double
+        officials:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfficialDisbursement'
+        message:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/billing-proc/health:
+    get:
+      tags: [Health]
+      summary: Service health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ── Workflows ───────────────────────────────────────────────────
+  /v1/workflows/payments/process:
+    post:
+      tags: [Workflows]
+      summary: Process payment for a contest
+      description: |
+        Full payment processing workflow for a single contest:
+        1. Fetches contest details from core-sys
+        2. Looks up billing rate from billing-sys
+        3. Fetches assigned officials from officials-sys
+        4. Creates contest bill payment + individual official payouts in billing-sys
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessPaymentRequest'
+      responses:
+        '201':
+          description: Payment processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessPaymentResponse'
+        '400':
+          description: Validation error or contest not found
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/workflows/payroll/calculate:
+    post:
+      tags: [Workflows]
+      summary: Calculate payroll for a period
+      description: |
+        Calculates payroll summary without creating payment records:
+        1. Fetches contests in date range from core-sys
+        2. Fetches assignments from officials-sys
+        3. Looks up rates from billing-sys
+        4. Returns per-official earnings breakdown
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculatePayrollRequest'
+      responses:
+        '200':
+          description: Payroll calculation results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculatePayrollResponse'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/workflows/payroll/disburse:
+    post:
+      tags: [Workflows]
+      summary: Disburse payroll for a period
+      description: |
+        Calculates payroll and creates payment records for each official:
+        1. Runs payroll calculation (same as /calculate)
+        2. Creates payment records in billing-sys for each official
+        3. Returns disbursement summary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisbursePayrollRequest'
+      responses:
+        '201':
+          description: Payroll disbursed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisbursePayrollResponse'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'

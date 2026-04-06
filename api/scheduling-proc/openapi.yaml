@@ -1,0 +1,267 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid Scheduling Processor API
+  description: |
+    Scheduling workflow orchestrator for ContestGrid multi-tenant SaaS platform.
+    Coordinates contest creation (core-sys + billing-sys rate lookup) and
+    automatic official assignment (officials-sys). This is a process API —
+    it owns no data tables but orchestrates calls across system APIs.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: http://contestgrid-scheduling-proc.contestgrid.svc.cluster.local:3004
+    description: Kubernetes cluster (internal)
+  - url: http://localhost:3004
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health checks (no auth required)
+  - name: Workflows
+    description: Scheduling orchestration workflows
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: contestgrid-proc-scheduling
+        timestamp:
+          type: string
+          format: date-time
+
+    CreateContestWorkflowRequest:
+      type: object
+      required:
+        - officialsAssociationId
+        - sportId
+        - contestTypeId
+        - contestLevelId
+        - contestLeagueId
+        - venueId
+        - subVenueId
+        - contestStartDate
+        - contestStartTime
+        - homeTeamId
+        - visitingTeamId
+      properties:
+        officialsAssociationId:
+          type: integer
+        sportId:
+          type: integer
+        contestTypeId:
+          type: integer
+        contestLevelId:
+          type: integer
+        contestLeagueId:
+          type: integer
+        venueId:
+          type: integer
+        subVenueId:
+          type: integer
+        contestStartDate:
+          type: string
+          format: date
+          example: "2026-04-15"
+        contestStartTime:
+          type: string
+          example: "18:00"
+        homeTeamId:
+          type: integer
+        visitingTeamId:
+          type: integer
+        numberOfficialsRequired:
+          type: integer
+          default: 1
+        contestStatusId:
+          type: integer
+
+    CreateContestWorkflowResponse:
+      type: object
+      properties:
+        contest:
+          type: object
+          description: The created contest record from core-sys
+        rate:
+          nullable: true
+          description: Matched billing rate (null if none found)
+        message:
+          type: string
+
+    AutoAssignRequest:
+      type: object
+      properties:
+        contestScheduleIds:
+          type: array
+          items:
+            type: integer
+          description: Specific contest IDs to assign (all unassigned if omitted)
+        date:
+          type: string
+          format: date
+          description: Filter contests by date
+        associationTenantId:
+          type: integer
+          description: Tenant owning the officials pool
+
+    AssignedOfficial:
+      type: object
+      properties:
+        officialId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        positionNumber:
+          type: integer
+
+    ContestAssignmentResult:
+      type: object
+      properties:
+        contestScheduleId:
+          type: integer
+        assignedOfficials:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedOfficial'
+        required:
+          type: integer
+        assigned:
+          type: integer
+        fullyStaffed:
+          type: boolean
+
+    AutoAssignResponse:
+      type: object
+      properties:
+        totalContests:
+          type: integer
+        totalAssigned:
+          type: integer
+        fullyStaffed:
+          type: integer
+        understaffed:
+          type: integer
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestAssignmentResult'
+        message:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/scheduling/health:
+    get:
+      tags: [Health]
+      summary: Service health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ── Workflows ───────────────────────────────────────────────────
+  /v1/workflows/contests/create:
+    post:
+      tags: [Workflows]
+      summary: Create contest with rate lookup
+      description: |
+        Orchestrates contest creation across services:
+        1. Creates contest in core-sys
+        2. Looks up matching billing rate in billing-sys
+        3. Returns both results
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContestWorkflowRequest'
+      responses:
+        '201':
+          description: Contest created with rate lookup result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateContestWorkflowResponse'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/workflows/assignments/auto-assign:
+    post:
+      tags: [Workflows]
+      summary: Auto-assign officials to contests
+      description: |
+        Finds unassigned or understaffed contests and assigns available officials:
+        1. Fetches contests needing officials from core-sys
+        2. Fetches available officials from officials-sys
+        3. Creates assignments via officials-sys bulk endpoint
+        4. Returns summary of assignments made
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoAssignRequest'
+      responses:
+        '200':
+          description: Auto-assignment results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoAssignResponse'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'

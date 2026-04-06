@@ -1,0 +1,1366 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid Core System API
+  description: |
+    Core domain data service for ContestGrid multi-tenant SaaS platform.
+    Owns tenants, contests, teams, venues, levels, seasons, and leagues.
+    All data endpoints require JWT authentication and enforce tenant isolation
+    via PostgreSQL Row-Level Security.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: http://contestgrid-core-sys.contestgrid.svc.cluster.local:3001
+    description: Kubernetes cluster (internal)
+  - url: http://localhost:3001
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health checks (no auth required)
+  - name: Tenants
+    description: Tenant management
+  - name: Levels
+    description: Contest levels (e.g., Varsity, JV)
+  - name: Seasons
+    description: Contest seasons
+  - name: Leagues
+    description: Contest leagues
+  - name: Teams
+    description: Team management
+  - name: Venues
+    description: Venue and sub-venue management
+  - name: Contests
+    description: Contest schedule management
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token with `custom:tenant_id` claim for tenant isolation
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        service:
+          type: string
+          example: contestgrid-core-sys
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+        database:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            database:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            version:
+              type: string
+
+    Tenant:
+      type: object
+      properties:
+        tenant_id:
+          type: integer
+        tenant_name:
+          type: string
+        tenant_subdomain:
+          type: string
+          nullable: true
+        tenant_type_id:
+          type: integer
+        tenant_abbreviation:
+          type: string
+          nullable: true
+        primary_contact_id:
+          type: integer
+          nullable: true
+        billing_address_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTenantRequest:
+      type: object
+      required: [tenantName, tenantAbbreviation, tenantTypeId]
+      properties:
+        tenantName:
+          type: string
+        tenantAbbreviation:
+          type: string
+        tenantTypeId:
+          type: integer
+        tenantSubDomain:
+          type: string
+
+    UpdateTenantRequest:
+      type: object
+      properties:
+        tenantName:
+          type: string
+        tenantAbbreviation:
+          type: string
+
+    ContestLevel:
+      type: object
+      properties:
+        contest_level_id:
+          type: integer
+        tenant_id:
+          type: integer
+        level_name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        display_order:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateLevelRequest:
+      type: object
+      required: [levelName, officialsAssociationId]
+      properties:
+        levelName:
+          type: string
+        officialsAssociationId:
+          type: integer
+
+    UpdateLevelRequest:
+      type: object
+      required: [levelName]
+      properties:
+        levelName:
+          type: string
+
+    ContestSeason:
+      type: object
+      properties:
+        contest_season_id:
+          type: integer
+        tenant_id:
+          type: integer
+        season_name:
+          type: string
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateSeasonRequest:
+      type: object
+      required: [seasonName, startDate]
+      properties:
+        seasonName:
+          type: string
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+
+    UpdateSeasonRequest:
+      type: object
+      required: [seasonName]
+      properties:
+        seasonName:
+          type: string
+
+    ContestLeague:
+      type: object
+      properties:
+        contest_league_id:
+          type: integer
+        tenant_id:
+          type: integer
+        season_id:
+          type: integer
+          nullable: true
+        league_name:
+          type: string
+        sport_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateLeagueRequest:
+      type: object
+      required: [levelId, leagueName, officialsAssociationId]
+      properties:
+        levelId:
+          type: integer
+        leagueName:
+          type: string
+        officialsAssociationId:
+          type: integer
+
+    UpdateLeagueRequest:
+      type: object
+      required: [leagueName]
+      properties:
+        leagueName:
+          type: string
+
+    Team:
+      type: object
+      properties:
+        team_id:
+          type: integer
+        tenant_id:
+          type: integer
+        contest_league_id:
+          type: integer
+        contest_level_id:
+          type: integer
+        team_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTeamRequest:
+      type: object
+      required: [leagueId, levelId, teamName]
+      properties:
+        leagueId:
+          type: integer
+        levelId:
+          type: integer
+        teamName:
+          type: string
+
+    UpdateTeamRequest:
+      type: object
+      required: [teamName]
+      properties:
+        teamName:
+          type: string
+
+    Venue:
+      type: object
+      properties:
+        venue_id:
+          type: integer
+        tenant_id:
+          type: integer
+        venue_name:
+          type: string
+        address_id:
+          type: integer
+          nullable: true
+        primary_contact_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateVenueRequest:
+      type: object
+      required: [venueName, addressId, officialsAssociationId]
+      properties:
+        venueName:
+          type: string
+        addressId:
+          type: integer
+        officialsAssociationId:
+          type: integer
+
+    UpdateVenueRequest:
+      type: object
+      required: [venueName]
+      properties:
+        venueName:
+          type: string
+
+    VenueSub:
+      type: object
+      properties:
+        venue_sub_id:
+          type: integer
+        venue_id:
+          type: integer
+        sub_venue_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateSubVenueRequest:
+      type: object
+      required: [subVenueName]
+      properties:
+        subVenueName:
+          type: string
+        subVenueDesc:
+          type: string
+
+    ContestSchedule:
+      type: object
+      properties:
+        contest_schedule_id:
+          type: integer
+        tenant_id:
+          type: integer
+        officials_association_id:
+          type: integer
+        sport_id:
+          type: integer
+        contest_status_id:
+          type: integer
+        contest_type_id:
+          type: integer
+        contest_level_id:
+          type: integer
+        contest_league_id:
+          type: integer
+        venue_id:
+          type: integer
+        sub_venue_id:
+          type: integer
+        contest_start_date:
+          type: string
+          format: date
+        contest_start_time:
+          type: string
+          example: "18:00:00"
+        home_team_id:
+          type: integer
+        visiting_team_id:
+          type: integer
+        number_officials_required:
+          type: integer
+        home_score:
+          type: integer
+          nullable: true
+        visitor_score:
+          type: integer
+          nullable: true
+        verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ContestScheduleWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/ContestSchedule'
+        - type: object
+          properties:
+            sport_name:
+              type: string
+            contest_status_name:
+              type: string
+            contest_type_name:
+              type: string
+            level_name:
+              type: string
+            league_name:
+              type: string
+            venue_name:
+              type: string
+            sub_venue_name:
+              type: string
+            home_team_name:
+              type: string
+            visiting_team_name:
+              type: string
+            officials_association_name:
+              type: string
+
+    CreateContestRequest:
+      type: object
+      required:
+        - officialsAssociationId
+        - sportId
+        - contestTypeId
+        - contestLevelId
+        - contestLeagueId
+        - venueId
+        - subVenueId
+        - contestStartDate
+        - contestStartTime
+        - homeTeamId
+        - visitingTeamId
+      properties:
+        officialsAssociationId:
+          type: integer
+        sportId:
+          type: integer
+        contestStatusId:
+          type: integer
+          default: 1
+        contestTypeId:
+          type: integer
+        contestLevelId:
+          type: integer
+        contestLeagueId:
+          type: integer
+        venueId:
+          type: integer
+        subVenueId:
+          type: integer
+        contestStartDate:
+          type: string
+          format: date
+          example: "2026-04-15"
+        contestStartTime:
+          type: string
+          example: "18:00"
+        homeTeamId:
+          type: integer
+        visitingTeamId:
+          type: integer
+        numberOfficialsRequired:
+          type: integer
+          default: 1
+
+    UpdateContestRequest:
+      type: object
+      properties:
+        contestStatusId:
+          type: integer
+        venueId:
+          type: integer
+        subVenueId:
+          type: integer
+        contestStartDate:
+          type: string
+          format: date
+        contestStartTime:
+          type: string
+        homeTeamId:
+          type: integer
+        visitingTeamId:
+          type: integer
+        numberOfficialsRequired:
+          type: integer
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database connection failed
+
+  /v1/core/health:
+    get:
+      tags: [Health]
+      summary: Service health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ── Tenants ─────────────────────────────────────────────────────
+  /v1/tenants:
+    get:
+      tags: [Tenants]
+      summary: List all tenants
+      responses:
+        '200':
+          description: Tenant list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tenant'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Tenants]
+      summary: Create a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTenantRequest'
+      responses:
+        '201':
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Tenant'
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/tenants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Tenants]
+      summary: Get tenant by ID
+      responses:
+        '200':
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Tenant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Tenants]
+      summary: Update a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTenantRequest'
+      responses:
+        '200':
+          description: Tenant updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Tenant'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Levels ──────────────────────────────────────────────────────
+  /v1/levels:
+    get:
+      tags: [Levels]
+      summary: List contest levels
+      responses:
+        '200':
+          description: Level list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContestLevel'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Levels]
+      summary: Create a contest level
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLevelRequest'
+      responses:
+        '201':
+          description: Level created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLevel'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/levels/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Levels]
+      summary: Get level by ID
+      responses:
+        '200':
+          description: Level details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLevel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Levels]
+      summary: Update a level
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLevelRequest'
+      responses:
+        '200':
+          description: Level updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLevel'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Levels]
+      summary: Delete a level
+      responses:
+        '200':
+          description: Level deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Seasons ─────────────────────────────────────────────────────
+  /v1/seasons:
+    get:
+      tags: [Seasons]
+      summary: List contest seasons
+      responses:
+        '200':
+          description: Season list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContestSeason'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Seasons]
+      summary: Create a contest season
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSeasonRequest'
+      responses:
+        '201':
+          description: Season created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestSeason'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/seasons/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Seasons]
+      summary: Get season by ID
+      responses:
+        '200':
+          description: Season details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestSeason'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Seasons]
+      summary: Update a season
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSeasonRequest'
+      responses:
+        '200':
+          description: Season updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestSeason'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Seasons]
+      summary: Delete a season
+      responses:
+        '200':
+          description: Season deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Leagues ─────────────────────────────────────────────────────
+  /v1/leagues:
+    get:
+      tags: [Leagues]
+      summary: List contest leagues
+      responses:
+        '200':
+          description: League list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContestLeague'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Leagues]
+      summary: Create a contest league
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLeagueRequest'
+      responses:
+        '201':
+          description: League created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLeague'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/leagues/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Leagues]
+      summary: Get league by ID
+      responses:
+        '200':
+          description: League details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLeague'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Leagues]
+      summary: Update a league
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLeagueRequest'
+      responses:
+        '200':
+          description: League updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestLeague'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Leagues]
+      summary: Delete a league
+      responses:
+        '200':
+          description: League deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Teams ───────────────────────────────────────────────────────
+  /v1/teams:
+    get:
+      tags: [Teams]
+      summary: List teams
+      responses:
+        '200':
+          description: Team list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Team'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Teams]
+      summary: Create a team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeamRequest'
+      responses:
+        '201':
+          description: Team created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Team'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/teams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Teams]
+      summary: Get team by ID
+      responses:
+        '200':
+          description: Team details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Teams]
+      summary: Update a team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTeamRequest'
+      responses:
+        '200':
+          description: Team updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Team'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Teams]
+      summary: Delete a team
+      responses:
+        '200':
+          description: Team deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Venues ──────────────────────────────────────────────────────
+  /v1/venues:
+    get:
+      tags: [Venues]
+      summary: List venues
+      responses:
+        '200':
+          description: Venue list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Venue'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Venues]
+      summary: Create a venue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVenueRequest'
+      responses:
+        '201':
+          description: Venue created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Venue'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/venues/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Venues]
+      summary: Get venue by ID
+      responses:
+        '200':
+          description: Venue details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Venue'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Venues]
+      summary: Update a venue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVenueRequest'
+      responses:
+        '200':
+          description: Venue updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Venue'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Venues]
+      summary: Delete a venue
+      responses:
+        '200':
+          description: Venue deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/venues/{id}/sub-venues:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Venue ID
+    get:
+      tags: [Venues]
+      summary: List sub-venues for a venue
+      responses:
+        '200':
+          description: Sub-venue list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VenueSub'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Venues]
+      summary: Create a sub-venue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubVenueRequest'
+      responses:
+        '201':
+          description: Sub-venue created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/VenueSub'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ── Contests ────────────────────────────────────────────────────
+  /v1/contests:
+    get:
+      tags: [Contests]
+      summary: List contests
+      responses:
+        '200':
+          description: Contest list with joined detail names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContestScheduleWithDetails'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Contests]
+      summary: Create a contest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContestRequest'
+      responses:
+        '201':
+          description: Contest created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestSchedule'
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/contests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Contests]
+      summary: Get contest by ID
+      responses:
+        '200':
+          description: Contest details with joined names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestScheduleWithDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Contests]
+      summary: Update a contest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContestRequest'
+      responses:
+        '200':
+          description: Contest updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ContestSchedule'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Contests]
+      summary: Delete a contest
+      responses:
+        '200':
+          description: Contest deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'

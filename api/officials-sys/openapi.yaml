@@ -1,0 +1,797 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid Officials System API
+  description: |
+    Officials domain service for ContestGrid multi-tenant SaaS platform.
+    Owns officials, officials associations, bookings, and contest assignments.
+    All data endpoints require JWT authentication. Most endpoints also require
+    tenant context via `X-Tenant-ID` header or JWT `custom:tenant_id` claim.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: http://contestgrid-officials-sys.contestgrid.svc.cluster.local:3002
+    description: Kubernetes cluster (internal)
+  - url: http://localhost:3002
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health checks (no auth required)
+  - name: Officials
+    description: Official profiles (requires tenant context)
+  - name: Associations
+    description: Officials associations
+  - name: Bookings
+    description: Booking / address records (requires tenant context)
+  - name: Assignments
+    description: Contest-to-official assignments (requires tenant context)
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        service:
+          type: string
+          example: contestgrid-officials-sys
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+        database:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            database:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            version:
+              type: string
+
+    OfficialWithDetails:
+      type: object
+      properties:
+        official_id:
+          type: integer
+        person_id:
+          type: integer
+        official_config_id:
+          type: integer
+          nullable: true
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email_address:
+          type: string
+        uniform_number:
+          type: string
+          nullable: true
+        association_joined_date:
+          type: string
+          format: date
+        contest_schedule_joined_ts:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateOfficialRequest:
+      type: object
+      required: [person_id, association_joined_date]
+      properties:
+        person_id:
+          type: integer
+        uniform_number:
+          type: string
+        association_joined_date:
+          type: string
+          format: date
+
+    UpdateOfficialRequest:
+      type: object
+      properties:
+        uniform_number:
+          type: string
+        association_joined_date:
+          type: string
+          format: date
+
+    OfficialsAssociation:
+      type: object
+      properties:
+        officials_association_id:
+          type: integer
+        officials_association_name:
+          type: string
+        officials_association_abbreviation:
+          type: string
+        address_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OfficialsAssociationWithAddress:
+      allOf:
+        - $ref: '#/components/schemas/OfficialsAssociation'
+        - type: object
+          properties:
+            address_1:
+              type: string
+              nullable: true
+            address_2:
+              type: string
+              nullable: true
+            city:
+              type: string
+              nullable: true
+            state:
+              type: string
+              nullable: true
+            postal_code:
+              type: string
+              nullable: true
+            country_code:
+              type: string
+              nullable: true
+
+    CreateAssociationRequest:
+      type: object
+      required: [officials_association_name, officials_association_abbreviation, address_id]
+      properties:
+        officials_association_name:
+          type: string
+        officials_association_abbreviation:
+          type: string
+        address_id:
+          type: integer
+
+    UpdateAssociationRequest:
+      type: object
+      properties:
+        officials_association_name:
+          type: string
+        officials_association_abbreviation:
+          type: string
+        address_id:
+          type: integer
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: integer
+        tenant_id:
+          type: integer
+        address_1:
+          type: string
+          nullable: true
+        address_2:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        state:
+          type: string
+          nullable: true
+          maxLength: 2
+        postal_code:
+          type: string
+          nullable: true
+          maxLength: 10
+        country_code:
+          type: string
+          nullable: true
+          maxLength: 2
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateBookingRequest:
+      type: object
+      properties:
+        address_1:
+          type: string
+        address_2:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+          maxLength: 2
+        postal_code:
+          type: string
+          maxLength: 10
+        country_code:
+          type: string
+          maxLength: 2
+
+    Assignment:
+      type: object
+      properties:
+        assignment_id:
+          type: integer
+        contest_schedule_id:
+          type: integer
+        official_id:
+          type: integer
+        assignment_status_id:
+          type: integer
+        position_number:
+          type: integer
+          nullable: true
+        assigned_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AssignmentWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/Assignment'
+        - type: object
+          properties:
+            assignment_status_name:
+              type: string
+            first_name:
+              type: string
+            last_name:
+              type: string
+            email_address:
+              type: string
+            uniform_number:
+              type: string
+              nullable: true
+
+    CreateAssignmentRequest:
+      type: object
+      required: [contestScheduleId, officialId]
+      properties:
+        contestScheduleId:
+          type: integer
+        officialId:
+          type: integer
+        assignmentStatusId:
+          type: integer
+        positionNumber:
+          type: integer
+        notes:
+          type: string
+
+    BulkAssignmentRequest:
+      type: object
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateAssignmentRequest'
+
+    UpdateAssignmentRequest:
+      type: object
+      properties:
+        assignmentStatusId:
+          type: integer
+        positionNumber:
+          type: integer
+        confirmedAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database connection failed
+
+  /v1/officials/health:
+    get:
+      tags: [Health]
+      summary: Service health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ── Officials ───────────────────────────────────────────────────
+  /v1/officials:
+    get:
+      tags: [Officials]
+      summary: List officials
+      description: Returns all officials for the authenticated tenant. Requires tenant context.
+      responses:
+        '200':
+          description: Official list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OfficialWithDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Officials]
+      summary: Create an official
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOfficialRequest'
+      responses:
+        '201':
+          description: Official created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialWithDetails'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/officials/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Officials]
+      summary: Get official by ID
+      responses:
+        '200':
+          description: Official details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialWithDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Officials]
+      summary: Update an official
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOfficialRequest'
+      responses:
+        '200':
+          description: Official updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialWithDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Officials]
+      summary: Delete an official
+      responses:
+        '204':
+          description: Official deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Associations ────────────────────────────────────────────────
+  /v1/associations:
+    get:
+      tags: [Associations]
+      summary: List officials associations
+      description: Does not require tenant context — associations are shared.
+      responses:
+        '200':
+          description: Association list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OfficialsAssociationWithAddress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Associations]
+      summary: Create an officials association
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssociationRequest'
+      responses:
+        '201':
+          description: Association created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialsAssociation'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/associations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Associations]
+      summary: Get association by ID
+      responses:
+        '200':
+          description: Association details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialsAssociationWithAddress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Associations]
+      summary: Update an association
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssociationRequest'
+      responses:
+        '200':
+          description: Association updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialsAssociation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Associations]
+      summary: Delete an association
+      responses:
+        '204':
+          description: Association deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Bookings ────────────────────────────────────────────────────
+  /v1/bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings
+      responses:
+        '200':
+          description: Booking list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Bookings]
+      summary: Create a booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '201':
+          description: Booking created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/bookings/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Bookings]
+      summary: Get booking by ID
+      responses:
+        '200':
+          description: Booking details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Bookings]
+      summary: Update a booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingRequest'
+      responses:
+        '200':
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Booking'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Bookings]
+      summary: Delete a booking
+      responses:
+        '204':
+          description: Booking deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Assignments ─────────────────────────────────────────────────
+  /v1/assignments:
+    get:
+      tags: [Assignments]
+      summary: List assignments
+      parameters:
+        - name: contestScheduleId
+          in: query
+          schema:
+            type: integer
+          description: Filter by contest schedule ID
+      responses:
+        '200':
+          description: Assignment list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AssignmentWithDetails'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Assignments]
+      summary: Create an assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssignmentRequest'
+      responses:
+        '201':
+          description: Assignment created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Assignment'
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Duplicate assignment (official already assigned to contest)
+
+  /v1/assignments/bulk:
+    post:
+      tags: [Assignments]
+      summary: Create multiple assignments at once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkAssignmentRequest'
+      responses:
+        '201':
+          description: Assignments created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Assignment'
+                  count:
+                    type: integer
+                  message:
+                    type: string
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/assignments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Assignments]
+      summary: Get assignment by ID
+      responses:
+        '200':
+          description: Assignment details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AssignmentWithDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Assignments]
+      summary: Update an assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssignmentRequest'
+      responses:
+        '200':
+          description: Assignment updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Assignment'
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Assignments]
+      summary: Delete an assignment
+      responses:
+        '200':
+          description: Assignment deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'

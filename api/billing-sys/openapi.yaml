@@ -1,0 +1,672 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid Billing System API
+  description: |
+    Billing domain service for ContestGrid multi-tenant SaaS platform.
+    Owns contest rates, tenant pay-rate mappings, and payment records.
+    All data endpoints require JWT authentication. Most require tenant context.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: http://contestgrid-billing-sys.contestgrid.svc.cluster.local:3003
+    description: Kubernetes cluster (internal)
+  - url: http://localhost:3003
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health checks (no auth required)
+  - name: Rates
+    description: Contest billing rates per association/sport/level
+  - name: Payments
+    description: Tenant pay-rate mappings (legacy)
+  - name: Billing Payments
+    description: Actual payment transaction records
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        service:
+          type: string
+          example: contestgrid-billing-sys
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+        database:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            database:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            version:
+              type: string
+
+    ContestRate:
+      type: object
+      properties:
+        officials_association_id:
+          type: integer
+        tenant_id:
+          type: integer
+        sport_id:
+          type: integer
+        contest_level_id:
+          type: integer
+        contest_league_id:
+          type: integer
+          nullable: true
+        contest_num_officials_contracted:
+          type: integer
+        contest_bill_amount:
+          type: string
+          description: Decimal value as string
+          example: "150.00"
+        contest_umpire_rate:
+          type: string
+          description: Decimal value as string
+          example: "75.00"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateRateRequest:
+      type: object
+      required:
+        - officials_association_id
+        - sport_id
+        - contest_level_id
+        - contest_num_officials_contracted
+        - contest_bill_amount
+        - contest_umpire_rate
+      properties:
+        officials_association_id:
+          type: integer
+        sport_id:
+          type: integer
+        contest_level_id:
+          type: integer
+        contest_league_id:
+          type: integer
+        contest_num_officials_contracted:
+          type: integer
+        contest_bill_amount:
+          type: number
+          format: double
+        contest_umpire_rate:
+          type: number
+          format: double
+
+    UpdateRateRequest:
+      type: object
+      properties:
+        contest_league_id:
+          type: integer
+        contest_num_officials_contracted:
+          type: integer
+        contest_bill_amount:
+          type: number
+          format: double
+        contest_umpire_rate:
+          type: number
+          format: double
+
+    TenantPayRateMap:
+      type: object
+      properties:
+        tenant_id:
+          type: integer
+        rate_id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePayRateMapRequest:
+      type: object
+      required: [rate_id]
+      properties:
+        rate_id:
+          type: integer
+
+    Payment:
+      type: object
+      properties:
+        payment_id:
+          type: integer
+        tenant_id:
+          type: integer
+        payment_type_id:
+          type: integer
+        payment_status_id:
+          type: integer
+        contest_schedule_id:
+          type: integer
+        official_id:
+          type: integer
+          nullable: true
+        assignment_id:
+          type: integer
+          nullable: true
+        amount:
+          type: string
+          description: Decimal as string
+          example: "75.00"
+        currency:
+          type: string
+          example: USD
+          maxLength: 3
+        processor:
+          type: string
+          nullable: true
+          maxLength: 50
+        processor_transaction_id:
+          type: string
+          nullable: true
+        processor_response:
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        period_start:
+          type: string
+          format: date
+          nullable: true
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        payment_status_name:
+          type: string
+        payment_type_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreatePaymentRequest:
+      type: object
+      required: [payment_type_id, contest_schedule_id, amount]
+      properties:
+        payment_type_id:
+          type: integer
+        payment_status_id:
+          type: integer
+        contest_schedule_id:
+          type: integer
+        official_id:
+          type: integer
+        assignment_id:
+          type: integer
+        amount:
+          type: number
+          format: double
+        currency:
+          type: string
+          maxLength: 3
+          default: USD
+        processor:
+          type: string
+          maxLength: 50
+        processor_transaction_id:
+          type: string
+        processor_response: {}
+        description:
+          type: string
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+        paid_at:
+          type: string
+          format: date-time
+
+    BatchPaymentRequest:
+      type: object
+      required: [payments]
+      properties:
+        payments:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/CreatePaymentRequest'
+
+    UpdatePaymentRequest:
+      type: object
+      properties:
+        payment_status_id:
+          type: integer
+        processor:
+          type: string
+          maxLength: 50
+        processor_transaction_id:
+          type: string
+        processor_response: {}
+        description:
+          type: string
+        paid_at:
+          type: string
+          format: date-time
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Database connection failed
+
+  /v1/billing/health:
+    get:
+      tags: [Health]
+      summary: Service health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ── Rates ───────────────────────────────────────────────────────
+  /v1/rates:
+    get:
+      tags: [Rates]
+      summary: List contest rates
+      responses:
+        '200':
+          description: Rate list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContestRate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Rates]
+      summary: Create a contest rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRateRequest'
+      responses:
+        '201':
+          description: Rate created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestRate'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/rates/{associationId}/{sportId}/{levelId}:
+    parameters:
+      - name: associationId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: sportId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: levelId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Rates]
+      summary: Get rate by composite key
+      responses:
+        '200':
+          description: Rate details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestRate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Rates]
+      summary: Update a rate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRateRequest'
+      responses:
+        '200':
+          description: Rate updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestRate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Rates]
+      summary: Delete a rate
+      responses:
+        '204':
+          description: Rate deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Payments (Tenant Pay Rate Map) ──────────────────────────────
+  /v1/payments:
+    get:
+      tags: [Payments]
+      summary: List tenant pay-rate mappings
+      description: Does not require tenant context.
+      responses:
+        '200':
+          description: Pay-rate map list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TenantPayRateMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Payments]
+      summary: Create a pay-rate mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayRateMapRequest'
+      responses:
+        '201':
+          description: Mapping created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPayRateMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/payments/{tenantId}:
+    parameters:
+      - name: tenantId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Payments]
+      summary: Get pay-rate mapping by tenant ID
+      responses:
+        '200':
+          description: Pay-rate mapping
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPayRateMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Payments]
+      summary: Update a pay-rate mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayRateMapRequest'
+      responses:
+        '200':
+          description: Mapping updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantPayRateMap'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Payments]
+      summary: Delete a pay-rate mapping
+      responses:
+        '204':
+          description: Mapping deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ── Billing Payments ────────────────────────────────────────────
+  /v1/billing-payments:
+    get:
+      tags: [Billing Payments]
+      summary: List payment records
+      parameters:
+        - name: contestScheduleId
+          in: query
+          schema:
+            type: integer
+        - name: officialId
+          in: query
+          schema:
+            type: integer
+        - name: paymentTypeId
+          in: query
+          schema:
+            type: integer
+        - name: paymentStatusId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Billing Payments]
+      summary: Create a payment record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Payment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/billing-payments/batch:
+    post:
+      tags: [Billing Payments]
+      summary: Create multiple payment records (1-500)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPaymentRequest'
+      responses:
+        '201':
+          description: Payments created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  count:
+                    type: integer
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/billing-payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Billing Payments]
+      summary: Get payment by ID
+      responses:
+        '200':
+          description: Payment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Billing Payments]
+      summary: Update a payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePaymentRequest'
+      responses:
+        '200':
+          description: Payment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Billing Payments]
+      summary: Delete a payment
+      responses:
+        '200':
+          description: Payment deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'

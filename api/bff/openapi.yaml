@@ -1,0 +1,1377 @@
+openapi: 3.0.3
+info:
+  title: ContestGrid BFF API
+  description: |
+    Backend for Frontend aggregation layer for ContestGrid multi-tenant SaaS platform.
+    Provides authentication (mock JWT for local dev, Cognito for production),
+    aggregated views (dashboard, contests with officials, officials with assignments),
+    and pass-through proxy routes to all downstream system and process APIs.
+
+    All endpoints except `/api/health` and `/api/auth/login` require a valid JWT
+    Bearer token. Tenant context is extracted from the JWT `custom:tenant_id` claim.
+  version: 1.0.0
+  contact:
+    name: ContestGrid Engineering
+
+servers:
+  - url: https://api.contestgrid.local:8443
+    description: Kubernetes Istio gateway (HTTPS)
+  - url: http://localhost:3000
+    description: Local development
+
+tags:
+  - name: Health
+    description: Service health (no auth required)
+  - name: Auth
+    description: Authentication — login, token validation, refresh
+  - name: Dashboard
+    description: Aggregated dashboard data from multiple services
+  - name: Contests
+    description: Aggregated contest views with officials and billing
+  - name: Officials
+    description: Aggregated official views with assignments and earnings
+  - name: "Proxy: Core"
+    description: Pass-through to core-sys (tenants, levels, seasons, leagues, teams, venues, contests)
+  - name: "Proxy: Officials"
+    description: Pass-through to officials-sys (associations, bookings, assignments)
+  - name: "Proxy: Billing"
+    description: Pass-through to billing-sys (rates, payments, billing-payments)
+  - name: "Proxy: Scheduling Workflows"
+    description: Pass-through to scheduling-proc workflows
+  - name: "Proxy: Billing Workflows"
+    description: Pass-through to billing-proc workflows
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT with sub, email, name, custom:tenant_id, custom:roles claims
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: contestgrid-bff
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@contestgrid.local
+        password:
+          type: string
+          example: password123
+        tenantId:
+          type: string
+          example: "1"
+        roles:
+          type: array
+          items:
+            type: string
+          example: ["admin"]
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT Bearer token
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            name:
+              type: string
+            tenantId:
+              type: string
+            roles:
+              type: array
+              items:
+                type: string
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+        tenantId:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+
+    RefreshResponse:
+      type: object
+      properties:
+        token:
+          type: string
+
+    AssignmentSummary:
+      type: object
+      properties:
+        assignmentId:
+          type: integer
+        officialId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        positionNumber:
+          type: integer
+          nullable: true
+        assignmentStatusName:
+          type: string
+
+    DashboardOverview:
+      type: object
+      properties:
+        tenantId:
+          type: string
+        contests:
+          type: object
+          properties:
+            total:
+              type: integer
+            upcoming:
+              type: integer
+            needingOfficials:
+              type: integer
+        officials:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+        billing:
+          type: object
+          properties:
+            totalBilled:
+              type: number
+              format: double
+            totalPaid:
+              type: number
+              format: double
+            outstanding:
+              type: number
+              format: double
+        recentAssignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignmentSummary'
+
+    ContestListItem:
+      type: object
+      properties:
+        contestScheduleId:
+          type: integer
+        sportName:
+          type: string
+        contestLevelName:
+          type: string
+        homeTeamName:
+          type: string
+        visitingTeamName:
+          type: string
+        venueName:
+          type: string
+        subVenueName:
+          type: string
+          nullable: true
+        contestStartDate:
+          type: string
+          format: date
+        contestStartTime:
+          type: string
+        contestStatusName:
+          type: string
+        officialCount:
+          type: integer
+        requiredOfficials:
+          type: integer
+
+    ContestDetail:
+      allOf:
+        - $ref: '#/components/schemas/ContestListItem'
+        - type: object
+          properties:
+            contestEndDate:
+              type: string
+              format: date
+              nullable: true
+            contestEndTime:
+              type: string
+              nullable: true
+            leagueName:
+              type: string
+              nullable: true
+            contestTypeName:
+              type: string
+              nullable: true
+            officials:
+              type: array
+              items:
+                $ref: '#/components/schemas/AssignmentSummary'
+            billing:
+              type: object
+              nullable: true
+              properties:
+                rate:
+                  type: number
+                  format: double
+                totalCost:
+                  type: number
+                  format: double
+                paymentStatus:
+                  type: string
+
+    OfficialListItem:
+      type: object
+      properties:
+        officialId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        emailAddress:
+          type: string
+        uniformNumber:
+          type: string
+          nullable: true
+        assignmentCount:
+          type: integer
+
+    OfficialDetail:
+      allOf:
+        - $ref: '#/components/schemas/OfficialListItem'
+        - type: object
+          properties:
+            phone:
+              type: string
+              nullable: true
+            assignments:
+              type: array
+              items:
+                $ref: '#/components/schemas/AssignmentSummary'
+            earnings:
+              type: object
+              nullable: true
+              properties:
+                totalEarnings:
+                  type: number
+                  format: double
+                contestsWorked:
+                  type: integer
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ══════════════════════════════════════════════════════════════════
+  # HEALTH
+  # ══════════════════════════════════════════════════════════════════
+  /api/health:
+    get:
+      tags: [Health]
+      summary: BFF health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/bff/health:
+    get:
+      tags: [Health]
+      summary: BFF health check (alias)
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  # ══════════════════════════════════════════════════════════════════
+  # AUTH
+  # ══════════════════════════════════════════════════════════════════
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and receive JWT token
+      description: |
+        Mock login for local development. Mints a JWT with the provided
+        email, tenantId, and roles. In production, this would delegate to
+        AWS Cognito.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Invalid email or missing password
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh JWT token
+      responses:
+        '200':
+          description: New token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════════════════════════
+  # DASHBOARD (Aggregated)
+  # ══════════════════════════════════════════════════════════════════
+  /api/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: Aggregated dashboard overview
+      description: |
+        Parallel fan-out to core-sys (contests), officials-sys (officials + assignments),
+        and billing-sys (payments). Cached for 60 seconds.
+      responses:
+        '200':
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardOverview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ══════════════════════════════════════════════════════════════════
+  # CONTESTS (Aggregated)
+  # ══════════════════════════════════════════════════════════════════
+  /api/contests:
+    get:
+      tags: [Contests]
+      summary: List contests with official counts
+      description: Fetches contests from core-sys and enriches with assignment counts from officials-sys.
+      responses:
+        '200':
+          description: Contest list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ContestListItem'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Contests]
+      summary: Create a contest (via scheduling-proc workflow)
+      description: Proxies to scheduling-proc contest creation workflow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - officialsAssociationId
+                - sportId
+                - contestTypeId
+                - contestLevelId
+                - contestLeagueId
+                - venueId
+                - subVenueId
+                - contestStartDate
+                - contestStartTime
+                - homeTeamId
+                - visitingTeamId
+              properties:
+                officialsAssociationId:
+                  type: integer
+                sportId:
+                  type: integer
+                contestTypeId:
+                  type: integer
+                contestLevelId:
+                  type: integer
+                contestLeagueId:
+                  type: integer
+                venueId:
+                  type: integer
+                subVenueId:
+                  type: integer
+                contestStartDate:
+                  type: string
+                  format: date
+                contestStartTime:
+                  type: string
+                homeTeamId:
+                  type: integer
+                visitingTeamId:
+                  type: integer
+                contestStatusId:
+                  type: integer
+      responses:
+        '201':
+          description: Contest created
+        '400':
+          description: Validation error
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/contests/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Contests]
+      summary: Get contest detail with officials and billing
+      description: |
+        Fetches contest from core-sys, assigned officials from officials-sys,
+        and billing rate from billing-sys. Returns enriched view.
+      responses:
+        '200':
+          description: Contest detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════════════════════════════
+  # OFFICIALS (Aggregated)
+  # ══════════════════════════════════════════════════════════════════
+  /api/officials:
+    get:
+      tags: [Officials]
+      summary: List officials with assignment counts
+      description: Fetches officials from officials-sys and enriches with assignment counts.
+      responses:
+        '200':
+          description: Official list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OfficialListItem'
+                  count:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/officials/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Officials]
+      summary: Get official detail with assignments and earnings
+      description: |
+        Fetches official from officials-sys, their assignments, and
+        earnings from billing-sys. Returns enriched view.
+      responses:
+        '200':
+          description: Official detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ══════════════════════════════════════════════════════════════════
+  # PROXY: Core-sys
+  # ══════════════════════════════════════════════════════════════════
+  /api/proxy/tenants:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List tenants (proxy → core-sys)
+      responses:
+        '200':
+          description: Tenant list from core-sys
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create tenant (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Tenant created
+
+  /api/proxy/tenants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get tenant (proxy → core-sys)
+      responses:
+        '200':
+          description: Tenant details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update tenant (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Tenant updated
+
+  /api/proxy/levels:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List levels (proxy → core-sys)
+      responses:
+        '200':
+          description: Level list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create level (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Level created
+
+  /api/proxy/levels/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get level (proxy → core-sys)
+      responses:
+        '200':
+          description: Level details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update level (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Level updated
+    delete:
+      tags: ["Proxy: Core"]
+      summary: Delete level (proxy → core-sys)
+      responses:
+        '200':
+          description: Level deleted
+
+  /api/proxy/seasons:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List seasons (proxy → core-sys)
+      responses:
+        '200':
+          description: Season list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create season (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Season created
+
+  /api/proxy/seasons/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get season (proxy → core-sys)
+      responses:
+        '200':
+          description: Season details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update season (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Season updated
+    delete:
+      tags: ["Proxy: Core"]
+      summary: Delete season (proxy → core-sys)
+      responses:
+        '200':
+          description: Season deleted
+
+  /api/proxy/leagues:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List leagues (proxy → core-sys)
+      responses:
+        '200':
+          description: League list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create league (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: League created
+
+  /api/proxy/leagues/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get league (proxy → core-sys)
+      responses:
+        '200':
+          description: League details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update league (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: League updated
+    delete:
+      tags: ["Proxy: Core"]
+      summary: Delete league (proxy → core-sys)
+      responses:
+        '200':
+          description: League deleted
+
+  /api/proxy/teams:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List teams (proxy → core-sys)
+      responses:
+        '200':
+          description: Team list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create team (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Team created
+
+  /api/proxy/teams/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get team (proxy → core-sys)
+      responses:
+        '200':
+          description: Team details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update team (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Team updated
+    delete:
+      tags: ["Proxy: Core"]
+      summary: Delete team (proxy → core-sys)
+      responses:
+        '200':
+          description: Team deleted
+
+  /api/proxy/venues:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List venues (proxy → core-sys)
+      responses:
+        '200':
+          description: Venue list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create venue (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Venue created
+
+  /api/proxy/venues/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get venue (proxy → core-sys)
+      responses:
+        '200':
+          description: Venue details
+    patch:
+      tags: ["Proxy: Core"]
+      summary: Update venue (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Venue updated
+    delete:
+      tags: ["Proxy: Core"]
+      summary: Delete venue (proxy → core-sys)
+      responses:
+        '200':
+          description: Venue deleted
+
+  /api/proxy/venues/{id}/sub-venues:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Venue ID
+    get:
+      tags: ["Proxy: Core"]
+      summary: List sub-venues (proxy → core-sys)
+      responses:
+        '200':
+          description: Sub-venue list
+    post:
+      tags: ["Proxy: Core"]
+      summary: Create sub-venue (proxy → core-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Sub-venue created
+
+  /api/proxy/contest-types:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List contest types (proxy → core-sys)
+      responses:
+        '200':
+          description: Contest type list
+
+  /api/proxy/contest-types/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get contest type (proxy → core-sys)
+      responses:
+        '200':
+          description: Contest type details
+
+  /api/proxy/sports:
+    get:
+      tags: ["Proxy: Core"]
+      summary: List sports (proxy → core-sys)
+      responses:
+        '200':
+          description: Sport list
+
+  /api/proxy/sports/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Core"]
+      summary: Get sport by ID (proxy → core-sys)
+      responses:
+        '200':
+          description: Sport details
+
+  # ══════════════════════════════════════════════════════════════════
+  # PROXY: Officials-sys
+  # ══════════════════════════════════════════════════════════════════
+  /api/proxy/associations:
+    get:
+      tags: ["Proxy: Officials"]
+      summary: List associations (proxy → officials-sys)
+      responses:
+        '200':
+          description: Association list
+    post:
+      tags: ["Proxy: Officials"]
+      summary: Create association (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Association created
+
+  /api/proxy/associations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Officials"]
+      summary: Get association (proxy → officials-sys)
+      responses:
+        '200':
+          description: Association details
+    patch:
+      tags: ["Proxy: Officials"]
+      summary: Update association (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Association updated
+    delete:
+      tags: ["Proxy: Officials"]
+      summary: Delete association (proxy → officials-sys)
+      responses:
+        '204':
+          description: Association deleted
+
+  /api/proxy/bookings:
+    get:
+      tags: ["Proxy: Officials"]
+      summary: List bookings (proxy → officials-sys)
+      responses:
+        '200':
+          description: Booking list
+    post:
+      tags: ["Proxy: Officials"]
+      summary: Create booking (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Booking created
+
+  /api/proxy/bookings/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Officials"]
+      summary: Get booking (proxy → officials-sys)
+      responses:
+        '200':
+          description: Booking details
+    patch:
+      tags: ["Proxy: Officials"]
+      summary: Update booking (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Booking updated
+    delete:
+      tags: ["Proxy: Officials"]
+      summary: Delete booking (proxy → officials-sys)
+      responses:
+        '204':
+          description: Booking deleted
+
+  /api/proxy/assignments:
+    get:
+      tags: ["Proxy: Officials"]
+      summary: List assignments (proxy → officials-sys)
+      parameters:
+        - name: contestScheduleId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Assignment list
+    post:
+      tags: ["Proxy: Officials"]
+      summary: Create assignment (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Assignment created
+
+  /api/proxy/assignments/bulk:
+    post:
+      tags: ["Proxy: Officials"]
+      summary: Bulk create assignments (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Assignments created
+
+  /api/proxy/assignments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Officials"]
+      summary: Get assignment (proxy → officials-sys)
+      responses:
+        '200':
+          description: Assignment details
+    patch:
+      tags: ["Proxy: Officials"]
+      summary: Update assignment (proxy → officials-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Assignment updated
+    delete:
+      tags: ["Proxy: Officials"]
+      summary: Delete assignment (proxy → officials-sys)
+      responses:
+        '200':
+          description: Assignment deleted
+
+  # ══════════════════════════════════════════════════════════════════
+  # PROXY: Billing-sys
+  # ══════════════════════════════════════════════════════════════════
+  /api/proxy/rates:
+    get:
+      tags: ["Proxy: Billing"]
+      summary: List rates (proxy → billing-sys)
+      responses:
+        '200':
+          description: Rate list
+    post:
+      tags: ["Proxy: Billing"]
+      summary: Create rate (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Rate created
+
+  /api/proxy/rates/{assocId}/{sportId}/{levelId}:
+    parameters:
+      - name: assocId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: sportId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: levelId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Billing"]
+      summary: Get rate by composite key (proxy → billing-sys)
+      responses:
+        '200':
+          description: Rate details
+    patch:
+      tags: ["Proxy: Billing"]
+      summary: Update rate (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Rate updated
+    delete:
+      tags: ["Proxy: Billing"]
+      summary: Delete rate (proxy → billing-sys)
+      responses:
+        '204':
+          description: Rate deleted
+
+  /api/proxy/payments:
+    get:
+      tags: ["Proxy: Billing"]
+      summary: List pay-rate mappings (proxy → billing-sys)
+      responses:
+        '200':
+          description: Pay-rate mapping list
+    post:
+      tags: ["Proxy: Billing"]
+      summary: Create pay-rate mapping (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Mapping created
+
+  /api/proxy/payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Billing"]
+      summary: Get pay-rate mapping (proxy → billing-sys)
+      responses:
+        '200':
+          description: Mapping details
+    patch:
+      tags: ["Proxy: Billing"]
+      summary: Update pay-rate mapping (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Mapping updated
+    delete:
+      tags: ["Proxy: Billing"]
+      summary: Delete pay-rate mapping (proxy → billing-sys)
+      responses:
+        '204':
+          description: Mapping deleted
+
+  /api/proxy/billing-payments:
+    get:
+      tags: ["Proxy: Billing"]
+      summary: List billing payments (proxy → billing-sys)
+      parameters:
+        - name: contestScheduleId
+          in: query
+          schema:
+            type: integer
+        - name: officialId
+          in: query
+          schema:
+            type: integer
+        - name: paymentTypeId
+          in: query
+          schema:
+            type: integer
+        - name: paymentStatusId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Payment list
+    post:
+      tags: ["Proxy: Billing"]
+      summary: Create billing payment (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payment created
+
+  /api/proxy/billing-payments/batch:
+    post:
+      tags: ["Proxy: Billing"]
+      summary: Batch create billing payments (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payments created
+
+  /api/proxy/billing-payments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: ["Proxy: Billing"]
+      summary: Get billing payment (proxy → billing-sys)
+      responses:
+        '200':
+          description: Payment details
+    patch:
+      tags: ["Proxy: Billing"]
+      summary: Update billing payment (proxy → billing-sys)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Payment updated
+    delete:
+      tags: ["Proxy: Billing"]
+      summary: Delete billing payment (proxy → billing-sys)
+      responses:
+        '200':
+          description: Payment deleted
+
+  # ══════════════════════════════════════════════════════════════════
+  # PROXY: Scheduling Workflows
+  # ══════════════════════════════════════════════════════════════════
+  /api/proxy/workflows/contests/create:
+    post:
+      tags: ["Proxy: Scheduling Workflows"]
+      summary: Create contest workflow (proxy → scheduling-proc)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Contest created via workflow
+
+  /api/proxy/workflows/assignments/auto-assign:
+    post:
+      tags: ["Proxy: Scheduling Workflows"]
+      summary: Auto-assign officials (proxy → scheduling-proc)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Auto-assignment results
+
+  # ══════════════════════════════════════════════════════════════════
+  # PROXY: Billing Workflows
+  # ══════════════════════════════════════════════════════════════════
+  /api/proxy/workflows/payments/process:
+    post:
+      tags: ["Proxy: Billing Workflows"]
+      summary: Process payment (proxy → billing-proc)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payment processed
+
+  /api/proxy/workflows/payroll/calculate:
+    post:
+      tags: ["Proxy: Billing Workflows"]
+      summary: Calculate payroll (proxy → billing-proc)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Payroll calculation
+
+  /api/proxy/workflows/payroll/disburse:
+    post:
+      tags: ["Proxy: Billing Workflows"]
+      summary: Disburse payroll (proxy → billing-proc)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payroll disbursed
